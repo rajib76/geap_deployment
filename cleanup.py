@@ -71,6 +71,22 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
 
+def is_permission_denied(stderr: str) -> bool:
+    return "PERMISSION_DENIED" in stderr or "permission denied" in stderr.lower()
+
+
+def permission_hint(action: str, project: str, role: str, console_url: str = "") -> None:
+    print(f"\n  PERMISSION DENIED — your account lacks '{role}' on project '{project}'.")
+    print(f"  To grant it, run:")
+    print(f"    gcloud projects add-iam-policy-binding {project} \\")
+    print(f"      --member=\"user:$(gcloud config get-value account)\" \\")
+    print(f"      --role=\"{role}\"")
+    print(f"  Then re-run this script to {action}.")
+    if console_url:
+        print(f"  Or do it manually in the Cloud Console:")
+        print(f"    {console_url}")
+
+
 def section(title: str) -> None:
     print(f"\n{'─' * 60}")
     print(f"  {title}")
@@ -127,6 +143,13 @@ def delete_secret(secret: str, project: str, force: bool) -> None:
         print("  Done — secret deleted.")
     elif "NOT_FOUND" in result.stderr or "not found" in result.stderr.lower():
         print("  Secret not found — already deleted.")
+    elif is_permission_denied(result.stderr):
+        permission_hint(
+            action="delete the secret",
+            project=project,
+            role="roles/secretmanager.admin",
+            console_url=f"https://console.cloud.google.com/security/secret-manager?project={project}",
+        )
     else:
         print(f"  ERROR: {result.stderr.strip()}", file=sys.stderr)
         sys.exit(1)
@@ -144,6 +167,14 @@ def delete_bucket(bucket_uri: str, force: bool) -> None:
         print("  Done — bucket deleted.")
     elif "not found" in result.stderr.lower() or "does not exist" in result.stderr.lower():
         print("  Bucket not found — already deleted.")
+    elif is_permission_denied(result.stderr):
+        project = bucket_uri.replace("gs://", "").split("/")[0]
+        permission_hint(
+            action="delete the bucket",
+            project=project,
+            role="roles/storage.admin",
+            console_url=f"https://console.cloud.google.com/storage/browser?project={project}",
+        )
     else:
         print(f"  ERROR: {result.stderr.strip()}", file=sys.stderr)
         sys.exit(1)
@@ -174,6 +205,10 @@ def revoke_iam(email: str, project: str, force: bool) -> None:
             print(f"  Revoked {role}")
         elif "not found" in result.stderr.lower():
             print(f"  Binding not found for {role} — already removed.")
+        elif is_permission_denied(result.stderr):
+            print(f"  PERMISSION DENIED revoking {role}.")
+            print(f"  You need 'roles/resourcemanager.projectIamAdmin' or 'roles/owner' to modify IAM.")
+            print(f"  Do it manually: https://console.cloud.google.com/iam-admin/iam?project={project}")
         else:
             print(f"  WARNING: could not revoke {role}: {result.stderr.strip()}")
 
@@ -201,6 +236,10 @@ def disable_apis(project: str, force: bool) -> None:
     )
     if result.returncode == 0:
         print("  Done — APIs disabled.")
+    elif is_permission_denied(result.stderr):
+        print(f"  PERMISSION DENIED disabling APIs.")
+        print(f"  You need 'roles/serviceusage.serviceUsageAdmin' or 'roles/owner'.")
+        print(f"  Do it manually: https://console.cloud.google.com/apis/dashboard?project={project}")
     else:
         print(f"  WARNING: {result.stderr.strip()}")
 
