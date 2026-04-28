@@ -1,0 +1,5 @@
+google-adk>=1.0.0
+google-cloud-aiplatform[agent_engines,adk]>=1.93.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-gcp-trace>=1.6.0
+opentelemetry-resourcedetector-gcp>=1.6.0a0
